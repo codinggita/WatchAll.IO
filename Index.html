@@ -1,0 +1,559 @@
+<html lang="en">
+<script type="text/javascript" async="" src="https://www.google-analytics.com/analytics.js"></script>
+<script type="text/javascript" async=""
+  src="https://www.googletagmanager.com/gtag/js?id=G-3QVG77EPQG&amp;l=dataLayer&amp;cx=c"></script>
+<script>
+  window[Symbol.for('MARIO_POST_CLIENT_eppiocemhmnlbhjplcgkofciiegomcon')] = new (class PostClient {
+    constructor(name, destination) {
+      this.name = name;
+      this.destination = destination;
+      this.serverListeners = {};
+      this.bgRequestsListeners = {};
+      this.bgEventsListeners = {};
+      window.addEventListener('message', (message) => {
+        const data = message.data;
+        const isNotForMe = !(data.destination && data.destination === this.name);
+        const hasNotEventProp = !data.event;
+        if (isNotForMe || hasNotEventProp) {
+          return;
+        }
+        if (data.event === 'MARIO_POST_SERVER__BG_RESPONSE') {
+          const response = data.args;
+          if (this.hasBgRequestListener(response.requestId)) {
+            try {
+              this.bgRequestsListeners[response.requestId](response.response);
+            }
+            catch (e) {
+              console.log(e);
+            }
+            delete this.bgRequestsListeners[response.requestId];
+          }
+        }
+        else if (data.event === 'MARIO_POST_SERVER__BG_EVENT') {
+          const response = data.args;
+          if (this.hasBgEventListener(response.event)) {
+            try {
+              this.bgEventsListeners[data.id](response.payload);
+            }
+            catch (e) {
+              console.log(e);
+            }
+          }
+        }
+        else if (this.hasServerListener(data.event)) {
+          try {
+            this.serverListeners[data.event](data.args);
+          }
+          catch (e) {
+            console.log(e);
+          }
+        }
+        else {
+          console.log(`event not handled: ${data.event}`);
+        }
+      });
+    }
+    emitToServer(event, args) {
+      const id = this.generateUIID();
+      const message = {
+        args,
+        destination: this.destination,
+        event,
+        id,
+      };
+      window.postMessage(message, location.origin);
+      return id;
+    }
+    emitToBg(bgEventName, args) {
+      const requestId = this.generateUIID();
+      const request = { bgEventName, requestId, args };
+      this.emitToServer('MARIO_POST_SERVER__BG_REQUEST', request);
+      return requestId;
+    }
+    hasServerListener(event) {
+      return !!this.serverListeners[event];
+    }
+    hasBgRequestListener(requestId) {
+      return !!this.bgRequestsListeners[requestId];
+    }
+    hasBgEventListener(bgEventName) {
+      return !!this.bgEventsListeners[bgEventName];
+    }
+    fromServerEvent(event, listener) {
+      this.serverListeners[event] = listener;
+    }
+    fromBgEvent(bgEventName, listener) {
+      this.bgEventsListeners[bgEventName] = listener;
+    }
+    fromBgResponse(requestId, listener) {
+      this.bgRequestsListeners[requestId] = listener;
+    }
+    generateUIID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+  })('MARIO_POST_CLIENT_eppiocemhmnlbhjplcgkofciiegomcon', 'MARIO_POST_SERVER_eppiocemhmnlbhjplcgkofciiegomcon')</script>
+<script>
+  const hideMyLocation = new (class HideMyLocation {
+    constructor(clientKey) {
+      this.clientKey = clientKey;
+      this.watchIDs = {};
+      this.client = window[Symbol.for(clientKey)];
+      const getCurrentPosition = navigator.geolocation.getCurrentPosition;
+      const watchPosition = navigator.geolocation.watchPosition;
+      const clearWatch = navigator.geolocation.clearWatch;
+      const self = this;
+      navigator.geolocation.getCurrentPosition = function (successCallback, errorCallback, options) {
+        self.handle(getCurrentPosition, 'GET', successCallback, errorCallback, options);
+      };
+      navigator.geolocation.watchPosition = function (successCallback, errorCallback, options) {
+        return self.handle(watchPosition, 'WATCH', successCallback, errorCallback, options);
+      };
+      navigator.geolocation.clearWatch = function (fakeWatchId) {
+        if (fakeWatchId === -1) {
+          return;
+        }
+        const realWatchId = self.watchIDs[fakeWatchId];
+        delete self.watchIDs[fakeWatchId];
+        return clearWatch.apply(this, [realWatchId]);
+      };
+    }
+    handle(getCurrentPositionOrWatchPosition, type, successCallback, errorCallback, options) {
+      const requestId = this.client.emitToBg('HIDE_MY_LOCATION__GET_LOCATION');
+      let fakeWatchId = this.getRandomInt(0, 100000);
+      this.client.fromBgResponse(requestId, (response) => {
+        if (response.enabled) {
+          if (response.status === 'SUCCESS') {
+            const position = this.map(response);
+            successCallback(position);
+          }
+          else {
+            const error = this.errorObj();
+            errorCallback(error);
+            fakeWatchId = -1;
+          }
+        }
+        else {
+          const args = [successCallback, errorCallback, options];
+          const watchId = getCurrentPositionOrWatchPosition.apply(navigator.geolocation, args);
+          if (type === 'WATCH') {
+            this.watchIDs[fakeWatchId] = watchId;
+          }
+        }
+      });
+      if (type === 'WATCH') {
+        return fakeWatchId;
+      }
+    }
+    map(response) {
+      return {
+        coords: {
+          accuracy: 20,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          latitude: response.latitude,
+          longitude: response.longitude,
+          speed: null,
+        },
+        timestamp: Date.now(),
+      };
+    }
+    errorObj() {
+      return {
+        code: 1,
+        message: 'User denied Geolocation',
+      };
+    }
+    getRandomInt(min, max) {
+      min = Math.ceil(min);
+      max = Math.floor(max);
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+  })('MARIO_POST_CLIENT_eppiocemhmnlbhjplcgkofciiegomcon')
+</script>
+
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.ico">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <meta name="description"
+    content="Watch together with friends. Chat and react in real time to the same stream, whether it's YouTube, your own video, or a virtual browser.">
+  <meta property="og:image" content="/screenshot4.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="manifest" href="/manifest.json">
+  <title>WatchParty</title>
+  <script defer="defer" src="/static/js/main.b3512081.js"></script>
+  <link href="/static/css/main.9154545e.css" rel="stylesheet">
+  <script ecommerce-type="extend-native-history-api">(() => {
+        const nativePushState = history.pushState;
+        const nativeReplaceState = history.replaceState;
+        const nativeBack = history.back;
+        const nativeForward = history.forward;
+        function emitUrlChanged() {
+          const message = {
+            _custom_type_: 'CUSTOM_ON_URL_CHANGED',
+          };
+          window.postMessage(message);
+        }
+        history.pushState = function () {
+          nativePushState.apply(history, arguments);
+          emitUrlChanged();
+        };
+        history.replaceState = function () {
+          nativeReplaceState.apply(history, arguments);
+          emitUrlChanged();
+        };
+        history.back = function () {
+          nativeBack.apply(history, arguments);
+          emitUrlChanged();
+        };
+        history.forward = function () {
+          nativeForward.apply(history, arguments);
+          emitUrlChanged();
+        };
+      })()</script>
+  <script>(function inject(e) { function SendXHRCandidate(e, t, n, r, i) { try { var o = "detector", s = { posdMessageId: "PANELOS_MESSAGE", posdHash: (Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)).substring(0, 22), type: "VIDEO_XHR_CANDIDATE", from: o, to: o.substring(0, 6), content: { requestMethod: e, url: t, type: n, content: r } }; i && i[0] && i[0].length && (s.content.encodedPostBody = i[0]), window.postMessage(s, "*") } catch (e) { } } var t = XMLHttpRequest.prototype.open; XMLHttpRequest.prototype.open = function () { this.requestMethod = arguments[0], t.apply(this, arguments) }; var n = XMLHttpRequest.prototype.send; XMLHttpRequest.prototype.send = function () { var t = Object.assign(arguments, {}), r = this.onreadystatechange; return this.onreadystatechange = function () { if (4 !== this.readyState || function isFrameInBlackList(t) { return e.some((function (e) { return t.includes(e) })) }(this.responseURL) || setTimeout(SendXHRCandidate(this.requestMethod, this.responseURL, this.getResponseHeader("content-type"), this.response, t), 0), r) return r.apply(this, arguments) }, n.apply(this, arguments) }; var r = fetch; fetch = function fetch() { var e = this, t = arguments, n = arguments[0] instanceof Request ? arguments[0].url : arguments[0], i = arguments[0] instanceof Request ? arguments[0].method : "GET"; return new Promise((function (o, s) { r.apply(e, t).then((function (e) { if (e.body instanceof ReadableStream) { var t = e.json; e.json = function () { var r = arguments, o = this; return new Promise((function (s, a) { t.apply(o, r).then((function (t) { setTimeout(SendXHRCandidate(i, n, e.headers.get("content-type"), JSON.stringify(t)), 0), s(t) })).catch((function (e) { a(e) })) })) }; var r = e.text; e.text = function () { var t = arguments, o = this; return new Promise((function (s, a) { r.apply(o, t).then((function (t) { setTimeout(SendXHRCandidate(i, n, e.headers.get("content-type"), t), 0), s(t) })).catch((function (e) { a(e) })) })) } } o.apply(this, arguments) })).catch((function () { s.apply(this, arguments) })) })) } })(["facebook.com/", "twitter.com/", "youtube-nocookie.com/embed/", "//vk.com/", "//www.vk.com/", "//linkedin.com/", "//www.linkedin.com/", "//instagram.com/", "//www.instagram.com/", "//www.google.com/recaptcha/api2/", "//hangouts.google.com/webchat/", "//www.google.com/calendar/", "//www.google.com/maps/embed", "spotify.com/", "soundcloud.com/", "//player.vimeo.com/", "//disqus.com/", "//tgwidget.com/", "//js.driftt.com/", "friends2follow.com", "/widget", "login", "//video.bigmir.net/", "blogger.com", "//smartlock.google.com/", "//keep.google.com/", "/web.tolstoycomments.com/", "moz-extension://", "chrome-extension://", "/auth/", "//analytics.google.com/", "adclarity.com", "paddle.com/checkout", "hcaptcha.com", "recaptcha.net", "2captcha.com", "accounts.google.com", "www.google.com/shopping/customerreviews", "buy.tinypass.com", "gstatic.com", "secureir.ebaystatic.com", "docs.google.com", "contacts.google.com", "github.com", "mail.google.com", "chat.google.com", "audio.xpleer.com", "keepa.com"]);</script>
+  <script src="https://js.stripe.com/v3"></script>
+  <style data-jss="" data-meta="MuiDialog">
+    @media print {
+      .MuiDialog-root {
+        position: absolute !important;
+      }
+    }
+
+    .MuiDialog-scrollPaper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .MuiDialog-scrollBody {
+      overflow-x: hidden;
+      overflow-y: auto;
+      text-align: center;
+    }
+
+    .MuiDialog-scrollBody:after {
+      width: 0;
+      height: 100%;
+      content: "";
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    .MuiDialog-container {
+      height: 100%;
+      outline: 0;
+    }
+
+    @media print {
+      .MuiDialog-container {
+        height: auto;
+      }
+    }
+
+    .MuiDialog-paper {
+      margin: 32px;
+      position: relative;
+      overflow-y: auto;
+    }
+
+    @media print {
+      .MuiDialog-paper {
+        box-shadow: none;
+        overflow-y: visible;
+      }
+    }
+
+    .MuiDialog-paperScrollPaper {
+      display: flex;
+      max-height: calc(100% - 64px);
+      flex-direction: column;
+    }
+
+    .MuiDialog-paperScrollBody {
+      display: inline-block;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .MuiDialog-paperWidthFalse {
+      max-width: calc(100% - 64px);
+    }
+
+    .MuiDialog-paperWidthXs {
+      max-width: 444px;
+    }
+
+    @media (max-width:507.95px) {
+      .MuiDialog-paperWidthXs.MuiDialog-paperScrollBody {
+        max-width: calc(100% - 64px);
+      }
+    }
+
+    .MuiDialog-paperWidthSm {
+      max-width: 600px;
+    }
+
+    @media (max-width:663.95px) {
+      .MuiDialog-paperWidthSm.MuiDialog-paperScrollBody {
+        max-width: calc(100% - 64px);
+      }
+    }
+
+    .MuiDialog-paperWidthMd {
+      max-width: 960px;
+    }
+
+    @media (max-width:1023.95px) {
+      .MuiDialog-paperWidthMd.MuiDialog-paperScrollBody {
+        max-width: calc(100% - 64px);
+      }
+    }
+
+    .MuiDialog-paperWidthLg {
+      max-width: 1280px;
+    }
+
+    @media (max-width:1343.95px) {
+      .MuiDialog-paperWidthLg.MuiDialog-paperScrollBody {
+        max-width: calc(100% - 64px);
+      }
+    }
+
+    .MuiDialog-paperWidthXl {
+      max-width: 1920px;
+    }
+
+    @media (max-width:1983.95px) {
+      .MuiDialog-paperWidthXl.MuiDialog-paperScrollBody {
+        max-width: calc(100% - 64px);
+      }
+    }
+
+    .MuiDialog-paperFullWidth {
+      width: calc(100% - 64px);
+    }
+
+    .MuiDialog-paperFullScreen {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      max-width: 100%;
+      max-height: none;
+      border-radius: 0;
+    }
+
+    .MuiDialog-paperFullScreen.MuiDialog-paperScrollBody {
+      margin: 0;
+      max-width: 100%;
+    }
+  </style>
+</head>
+
+<body
+  bis_register="W3sibWFzdGVyIjp0cnVlLCJleHRlbnNpb25JZCI6ImVwcGlvY2VtaG1ubGJoanBsY2drb2ZjaWllZ29tY29uIiwiYWRibG9ja2VyU3RhdHVzIjp7IkRJU1BMQVkiOiJkaXNhYmxlZCIsIkZBQ0VCT09LIjoiZGlzYWJsZWQiLCJUV0lUVEVSIjoiZGlzYWJsZWQiLCJSRURESVQiOiJkaXNhYmxlZCIsIlBJTlRFUkVTVCI6ImRpc2FibGVkIn0sInZlcnNpb24iOiIxLjkuMTIiLCJzY29yZSI6MTA5MTJ9XQ==">
+  <script>!function () { var a = "fbclid"; if (-1 !== location.search.indexOf("fbclid=")) { var e = ""; try { var c = new URL(location); c.searchParams.delete(a), e = c.href } catch (a) { var l = new RegExp("[?&]fbclid=.*$"); e = location.search.replace(l, ""), e = location.pathname + e + location.hash } history.replaceState(null, "", e) } }()</script>
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <div id="root" bis_skin_checked="1">
+    <div style="display: flex; flex-wrap: wrap; padding: 1em 1em 0px; row-gap: 8px;" bis_skin_checked="1"><a href="/"
+        style="display: flex;">
+        <div
+          style="height: 48px; width: 48px; margin-right: 10px; border-radius: 50%; position: relative; background-color: rgb(14, 110, 184);"
+          bis_skin_checked="1"><i aria-hidden="true" class="film large inverted icon"
+            style="position: absolute; top: 8px; width: 100%; margin: 0px auto;"></i><i aria-hidden="true"
+            class="green group large inverted icon"
+            style="position: absolute; bottom: 8px; width: 100%; margin: 0px auto;"></i></div>
+      </a><a href="/" style="display: flex;">
+        <div style="display: flex; align-items: center;" bis_skin_checked="1">
+          <div
+            style="text-transform: uppercase; font-weight: 700; color: rgb(33, 133, 208); font-size: 30px; line-height: 30px;"
+            bis_skin_checked="1">Watch</div>
+          <div
+            style="text-transform: uppercase; font-weight: 700; color: rgb(33, 186, 69); font-size: 30px; line-height: 30px; margin-left: auto;"
+            bis_skin_checked="1">Party</div>
+        </div>
+      </a>
+      <div style="display: flex; margin-left: 10px; align-items: center;" bis_skin_checked="1"><a
+          href="https://discord.gg/3rYj5HV" target="_blank" rel="noopener noreferrer" class="footerIcon"
+          title="Discord"><i aria-hidden="true" class="discord big link icon"></i></a><a
+          href="https://github.com/howardchung/watchparty" target="_blank" rel="noopener noreferrer" class="footerIcon"
+          title="GitHub"><i aria-hidden="true" class="github big link icon"></i></a></div>
+      <div class="App_mobileStack__h4U5u" style="display: flex; margin-left: auto; gap: 4px;" bis_skin_checked="1">
+        <button class="ui orange fluid icon left labeled button toolButton"><i aria-hidden="true"
+            class="plus icon"></i>Subscribe</button>
+        <div role="listbox" aria-expanded="false" class="ui button labeled dropdown icon" tabindex="0"
+          style="height: 36px;" bis_skin_checked="1">
+          <div aria-atomic="true" aria-live="polite" role="alert" class="divider text" bis_skin_checked="1">Sign in
+          </div><i aria-hidden="true" class="sign in icon"></i>
+          <div class="menu transition" bis_skin_checked="1">
+            <div role="option" class="item" bis_skin_checked="1"><i aria-hidden="true"
+                class="facebook icon"></i>Facebook</div>
+            <div role="option" class="item" bis_skin_checked="1"><i aria-hidden="true" class="google icon"></i>Google
+            </div>
+            <div role="option" class="item" bis_skin_checked="1"><i aria-hidden="true" class="mail icon"></i>Email</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div bis_skin_checked="1">
+      <div class="Home_container__MGYYT" bis_skin_checked="1">
+        <div class="Home_hero__i3z5Q " bis_skin_checked="1">
+          <div class="Home_heroInner__8Qnw0" bis_skin_checked="1">
+            <div style="padding: 30px; flex: 1 1 0px;" bis_skin_checked="1">
+              <div class="Home_heroText__BF+lA" bis_skin_checked="1">Watch videos together with friends anywhere.</div>
+              <div class="Home_subText__CsovT" bis_skin_checked="1">No registration or download required.</div>
+              <div class="Home_subText__CsovT" bis_skin_checked="1"></div>
+              <div style="margin-top: 8px; width: 300px;" bis_skin_checked="1"><button
+                  class="ui blue huge fluid icon left labeled button"><i aria-hidden="true"
+                    class="certificate icon"></i>New Room</button></div>
+            </div>
+            <div style="flex: 1 1 0px;" bis_skin_checked="1"><img alt="hero" src="/screenshot4.png"
+                style="width: 100%; border-radius: 10px;"></div>
+          </div>
+        </div>
+        <div class="ui horizontal divider" bis_skin_checked="1">
+          <h4 class="ui inverted header"><i aria-hidden="true" class="cogs icon"></i>Features</h4>
+        </div>
+        <div class="Home_featureSection__MH6nn" bis_skin_checked="1">
+          <div
+            style="display: flex; flex: 1 1 0px; flex-direction: column; align-items: center; padding: 10px; min-width: 180px;"
+            bis_skin_checked="1"><i aria-hidden="true" class="sync huge fitted icon"></i>
+            <h4 class="Home_featureTitle__rJniM">Synchronized Play</h4>
+            <div class="Home_featureText__PBVn2" bis_skin_checked="1">Starts, stops, and seeks are synchronized to
+              everyone, so take those restroom and snack breaks without worrying about falling behind.</div>
+          </div>
+          <div
+            style="display: flex; flex: 1 1 0px; flex-direction: column; align-items: center; padding: 10px; min-width: 180px;"
+            bis_skin_checked="1"><i aria-hidden="true" class="conversation huge fitted icon"></i>
+            <h4 class="Home_featureTitle__rJniM">Chat</h4>
+            <div class="Home_featureText__PBVn2" bis_skin_checked="1">Chat with others in your room. Memes and inside
+              jokes encouraged.</div>
+          </div>
+          <div
+            style="display: flex; flex: 1 1 0px; flex-direction: column; align-items: center; padding: 10px; min-width: 180px;"
+            bis_skin_checked="1"><i aria-hidden="true" class="list huge fitted icon"></i>
+            <h4 class="Home_featureTitle__rJniM">Playlists</h4>
+            <div class="Home_featureText__PBVn2" bis_skin_checked="1">Set up a whole list of videos to play next, and
+              rearrange to your heart's content.</div>
+          </div>
+          <div
+            style="display: flex; flex: 1 1 0px; flex-direction: column; align-items: center; padding: 10px; min-width: 180px;"
+            bis_skin_checked="1"><i aria-hidden="true" class="video huge fitted icon"></i>
+            <h4 class="Home_featureTitle__rJniM">Video chat</h4>
+            <div class="Home_featureText__PBVn2" bis_skin_checked="1">Jump into video chat if you'd rather be
+              face-to-face.</div>
+          </div>
+        </div>
+        <div class="Home_hero__i3z5Q Home_green__1qSp9" bis_skin_checked="1">
+          <div class="Home_heroInner__8Qnw0" bis_skin_checked="1">
+            <div style="padding: 30px; flex: 1 1 0px;" bis_skin_checked="1">
+              <div class="Home_heroText__BF+lA" bis_skin_checked="1">React to moments together.</div>
+              <div class="Home_subText__CsovT" bis_skin_checked="1">Find moments of shared joy even when you're apart.
+              </div>
+              <div class="Home_subText__CsovT" bis_skin_checked="1"></div>
+            </div>
+            <div style="flex: 1 1 0px;" bis_skin_checked="1"><img alt="hero" src="/screenshot18.png"
+                style="width: 100%; border-radius: 10px;"></div>
+          </div>
+        </div>
+        <div class="ui horizontal divider" bis_skin_checked="1">
+          <h4 class="ui inverted header"><i aria-hidden="true" class="film icon"></i>Watch anything together</h4>
+        </div>
+        <div class="Home_featureSection__MH6nn" bis_skin_checked="1">
+          <div
+            style="display: flex; flex: 1 1 0px; flex-direction: column; align-items: center; padding: 10px; min-width: 180px;"
+            bis_skin_checked="1"><i aria-hidden="true" class="desktop huge fitted icon"></i>
+            <h4 class="Home_featureTitle__rJniM">VBrowser</h4>
+            <div class="Home_featureText__PBVn2" bis_skin_checked="1">Watch together on a virtual browser running in the
+              cloud.</div>
+          </div>
+          <div
+            style="display: flex; flex: 1 1 0px; flex-direction: column; align-items: center; padding: 10px; min-width: 180px;"
+            bis_skin_checked="1"><i aria-hidden="true" class="youtube huge fitted icon"></i>
+            <h4 class="Home_featureTitle__rJniM">YouTube</h4>
+            <div class="Home_featureText__PBVn2" bis_skin_checked="1">Watch videos together from YouTube.</div>
+          </div>
+          <div
+            style="display: flex; flex: 1 1 0px; flex-direction: column; align-items: center; padding: 10px; min-width: 180px;"
+            bis_skin_checked="1"><i aria-hidden="true" class="slideshare huge fitted icon"></i>
+            <h4 class="Home_featureTitle__rJniM">Screensharing</h4>
+            <div class="Home_featureText__PBVn2" bis_skin_checked="1">Share a browser tab or your desktop.</div>
+          </div>
+          <div
+            style="display: flex; flex: 1 1 0px; flex-direction: column; align-items: center; padding: 10px; min-width: 180px;"
+            bis_skin_checked="1"><i aria-hidden="true" class="file huge fitted icon"></i>
+            <h4 class="Home_featureTitle__rJniM">File</h4>
+            <div class="Home_featureText__PBVn2" bis_skin_checked="1">Upload and stream your own file.</div>
+          </div>
+          <div
+            style="display: flex; flex: 1 1 0px; flex-direction: column; align-items: center; padding: 10px; min-width: 180px;"
+            bis_skin_checked="1"><i aria-hidden="true" class="linkify huge fitted icon"></i>
+            <h4 class="Home_featureTitle__rJniM">URL</h4>
+            <div class="Home_featureText__PBVn2" bis_skin_checked="1">Paste in a video URL for everyone to watch from.
+            </div>
+          </div>
+        </div>
+        <div class="Home_hero__i3z5Q " bis_skin_checked="1">
+          <div class="Home_heroInner__8Qnw0" bis_skin_checked="1">
+            <div style="padding: 30px; flex: 1 1 0px;" bis_skin_checked="1">
+              <div class="Home_heroText__BF+lA" bis_skin_checked="1">Theater mode.</div>
+              <div class="Home_subText__CsovT" bis_skin_checked="1">Bring video and chat front-and-center for minimal
+                distractions.</div>
+              <div class="Home_subText__CsovT" bis_skin_checked="1"></div>
+            </div>
+            <div style="flex: 1 1 0px;" bis_skin_checked="1"><img alt="hero" src="/screenshot14.png"
+                style="width: 100%; border-radius: 10px;"></div>
+          </div>
+        </div>
+        <div class="ui horizontal divider" bis_skin_checked="1"></div>
+        <div style="padding: 30px; display: flex; flex-direction: column; align-items: center;" bis_skin_checked="1">
+          <div class="Home_heroText__BF+lA" bis_skin_checked="1">Get started!</div>
+          <div class="Home_featureSection__MH6nn" bis_skin_checked="1">
+            <div class="ui steps" style="margin: 8px;" bis_skin_checked="1">
+              <div class="step" bis_skin_checked="1"><i aria-hidden="true" class="certificate icon"></i>
+                <div class="content" bis_skin_checked="1">
+                  <div class="title" bis_skin_checked="1">1.</div>
+                  <div class="description" bis_skin_checked="1">Make a room</div>
+                </div>
+              </div>
+              <div class="step" bis_skin_checked="1"><i aria-hidden="true" class="group icon"></i>
+                <div class="content" bis_skin_checked="1">
+                  <div class="title" bis_skin_checked="1">2.</div>
+                  <div class="description" bis_skin_checked="1">Share link with friends</div>
+                </div>
+              </div>
+              <div class="step" bis_skin_checked="1"><i aria-hidden="true" class="film icon"></i>
+                <div class="content" bis_skin_checked="1">
+                  <div class="title" bis_skin_checked="1">3.</div>
+                  <div class="description" bis_skin_checked="1">Pick something to watch</div>
+                </div>
+              </div>
+              <div class="step" bis_skin_checked="1"><i aria-hidden="true" class="thumbs up outline icon"></i>
+                <div class="content" bis_skin_checked="1">
+                  <div class="title" bis_skin_checked="1">4.</div>
+                  <div class="description" bis_skin_checked="1">Success!</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="width: 160px;" bis_skin_checked="1"><button
+              class="ui blue fluid icon left labeled button toolButton"><i aria-hidden="true"
+                class="certificate icon"></i>New Room</button></div>
+        </div>
+      </div>
+    </div>
+    <div style="margin: 1em; padding-bottom: 1em; font-size: 18px; color: white;" bis_skin_checked="1"><a href="/terms"
+        style="color: white;">Terms</a> · <a href="/privacy" style="color: white;">Privacy</a> · <a href="/faq"
+        style="color: white;">FAQ</a> · <a href="/discordBot" style="color: white;">Discord Bot</a></div>
+  </div>
+  <script async="" src="https://www.googletagmanager.com/gtag/js?id=UA-45337794-6"></script>
+  <script>function gtag() { dataLayer.push(arguments) } window.dataLayer = window.dataLayer || [], gtag("js", new Date), gtag("config", "UA-45337794-6")</script>
+  <div id="F6DAFCB1-8CBE-0BFD-7F0F-E3C034CF3812" bis_skin_checked="1"></div>
+</body>
+
+</html>
